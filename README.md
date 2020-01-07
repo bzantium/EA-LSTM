@@ -5,5 +5,5 @@ It is pytorch and keras implementations of [**EA-LSTM: Evolutionary Attention-ba
 ## _Train and test_
 - You can simply run code by
 ```
-$ python main.py
+$ python main.py --data pollution.csv
 ```
