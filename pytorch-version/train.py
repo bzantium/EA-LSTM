@@ -6,12 +6,14 @@ from utils import make_cuda
 from sklearn.metrics import mean_squared_error, mean_absolute_error
 
 
-def train(args, model, data_loader):
+def train(args, model, data_loader, initial=False):
     MSELoss = nn.MSELoss(reduction='mean')
     optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 
     model.train()
-    for epoch in range(args.num_epochs):
+    num_epochs = args.initial_epochs if initial else args.num_epochs
+
+    for epoch in range(num_epochs):
         loss = 0
         for step, (features, targets) in enumerate(data_loader):
             features = make_cuda(features)
@@ -21,24 +23,25 @@ def train(args, model, data_loader):
 
             preds = model(features)
             mse_loss = MSELoss(preds, targets)
-            loss += math.sqrt(mse_loss.item())
+            loss += mse_loss.item()
             mse_loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
             optimizer.step()
 
             # print step info
             if (step + 1) % args.log_step == 0:
-                print("Epoch [%.2d/%.2d] Step [%.3d/%.3d]: RMSE_loss=%.4f"
+                print("Epoch [%.3d/%.3d] Step [%.3d/%.3d]: MSE_loss=%.4f, RMSE_loss=%.4f"
                       % (epoch + 1,
-                         args.num_epochs,
+                         num_epochs,
                          step + 1,
                          len(data_loader),
-                         loss / args.log_step))
+                         loss / args.log_step,
+                         math.sqrt(loss / args.log_step)))
                 loss = 0
     return model
 
 
-def evaluate(args, model, data_loader):
+def evaluate(args, model, scaler, data_loader):
     model.eval()
     model.lstm.flatten_parameters()
     all_preds = []
@@ -52,8 +55,8 @@ def evaluate(args, model, data_loader):
         all_preds.append(preds)
         all_targets.append(targets)
 
-    all_preds = torch.cat(all_preds, dim=0).unsqueeze(1).cpu().numpy()
-    all_targets = torch.cat(all_targets, dim=0).unsqueeze(1).cpu().numpy()
+    all_preds = scaler.inverse_transform(torch.cat(all_preds, dim=0).cpu().numpy().reshape(-1, 1))
+    all_targets = scaler.inverse_transform(torch.cat(all_targets, dim=0).cpu().numpy().reshape(-1, 1))
     mse = mean_squared_error(all_targets, all_preds)
     rmse = math.sqrt(mse)
     mae = mean_absolute_error(all_targets, all_preds)

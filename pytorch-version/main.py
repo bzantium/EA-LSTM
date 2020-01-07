@@ -1,9 +1,10 @@
 from utils import load_data, data_to_series_features, get_data_loader, is_minimum, make_cuda
-from evolutionary import (initialize_weights, individual_to_key,
-                          pop_to_weights, select, reconstruct_population)
+from algorithm import (initialize_weights, individual_to_key,
+                       pop_to_weights, select, reconstruct_population)
 from train import train, evaluate
 from model import weightedLSTM
 import argparse
+import numpy as np
 from copy import deepcopy
 from sklearn.model_selection import train_test_split
 
@@ -16,10 +17,12 @@ def parse_arguments():
                         help="Specify the number of evolution iterations")
     parser.add_argument('--batch_size', type=int, default=256,
                         help="Specify batch size")
-    parser.add_argument('--num_epochs', type=int, default=100,
-                        help="Specify the number of epochs for adaptation")
-    parser.add_argument('--log_step', type=int, default=50,
-                        help="Specify log step size for adaptation")
+    parser.add_argument('--initial_epochs', type=int, default=300,
+                        help="Specify the number of epochs for initial training")
+    parser.add_argument('--num_epochs', type=int, default=20,
+                        help="Specify the number of epochs for competitive search")
+    parser.add_argument('--log_step', type=int, default=100,
+                        help="Specify log step size for training")
     parser.add_argument('--learning_rate', type=float, default=1e-3,
                         help="Learning rate")
     parser.add_argument('--data', type=str, default='pollution.csv',
@@ -28,7 +31,6 @@ def parse_arguments():
     parser.add_argument('--code_length', type=int, default=6)
     parser.add_argument('--n_select', type=int, default=6)
     parser.add_argument('--time_steps', type=int, default=18)
-    parser.add_argument('--n_features', type=int, default=10)
     parser.add_argument('--n_hidden', type=int, default=128)
     parser.add_argument('--n_layers', type=int, default=2)
     parser.add_argument('--n_output', type=int, default=1)
@@ -40,8 +42,8 @@ def parse_arguments():
 
 def main():
     args = parse_arguments()
-    data = load_data(args.data)
-
+    data, y_scaler = load_data(args.data)
+    args.n_features = np.size(data, axis=-1)
     features = data_to_series_features(data, args.time_steps)
     train_features, features = train_test_split(features, test_size=0.3)
     valid_features, test_features = train_test_split(features, test_size=0.5)
@@ -49,21 +51,26 @@ def main():
     valid_data_loader = get_data_loader(valid_features, args.batch_size)
     test_data_loader = get_data_loader(test_features, args.batch_size)
 
+    best_model = weightedLSTM(args.n_features, args.n_hidden, args.n_layers,
+                              args.n_output, [1.0] * args.time_steps, args.bidirectional)
+    best_model = make_cuda(best_model)
+    print("Initial training before competitive random search")
+    best_model = train(args, best_model, train_data_loader, initial=True)
+    print("\nInitial training is done. Start competitive random search.\n")
+
     pop, weights = initialize_weights(args.pop_size, args.time_steps, args.code_length)
     key_to_rmse = {}
-    best_model = None
     for iteration in range(args.iterations):
         for enum, (indiv, weight) in enumerate(zip(pop, weights)):
-            print('iteration: [%d/%d] indiv_no: [%d/%d]' % (iteration, args.iterations, enum, args.pop_size))
+            print('iteration: [%d/%d] indiv_no: [%d/%d]' % (iteration + 1, args.iterations, enum, args.pop_size))
             key = individual_to_key(indiv)
             if key not in key_to_rmse.keys():
                 model = weightedLSTM(args.n_features, args.n_hidden, args.n_layers,
                                      args.n_output, weight, args.bidirectional)
                 model = make_cuda(model)
-                if best_model is not None:
-                    model.load_state_dict(best_model.state_dict())
+                model.load_state_dict(best_model.state_dict())
                 model = train(args, model, train_data_loader)
-                rmse, mae = evaluate(args, model, valid_data_loader)
+                rmse, mae = evaluate(args, model, y_scaler, valid_data_loader)
                 if is_minimum(rmse, key_to_rmse):
                     best_model = deepcopy(model)
                 key_to_rmse[key] = rmse

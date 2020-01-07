@@ -1,6 +1,7 @@
 import pandas as pd
 import torch
-from sklearn.preprocessing import StandardScaler
+import os
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
 from torch.utils.data import DataLoader, TensorDataset, RandomSampler
 import numpy as np
@@ -26,20 +27,22 @@ def load_data(data_name):
     dataset = pd.read_csv(path).dropna()
     data = dataset.values
     encoder = OneHotEncoder()
-    one_hot = encoder.fit_transform(np.expand_dims(data[:, 4], axis=1)).toarray()
-    data = np.delete(data, 4, axis=1)
+    one_hot = encoder.fit_transform(np.expand_dims(data[:, -4], axis=1)).toarray()
+    data = np.delete(data, -4, axis=1)
     data = np.concatenate((data, one_hot), axis=1)
     data = data.astype('float32')
-    scaler = StandardScaler()
-    scaled_data = scaler.fit_transform(data[:, 1:])
-    scaled_data = np.concatenate((np.expand_dims(data[:, 0], axis=1), scaled_data), axis=1)
-    return scaled_data
+    scaler = MinMaxScaler()
+    y_scaler = MinMaxScaler()
+    scaled_X_data = scaler.fit_transform(data[:, 1:])
+    scaled_y_data = y_scaler.fit_transform(np.expand_dims(data[:, 0], axis=1))
+    scaled_data = np.concatenate((scaled_y_data, scaled_X_data), axis=1)
+    return scaled_data, y_scaler
 
 
 def data_to_series_features(data, time_steps):
     data_size = len(data) - time_steps
     target_values = data[:, 0]
-    input_features = data[:, 1:]
+    input_features = data
     series_features = []
     for i in range(data_size):
         series_features.append(InputFeatures(input_feature=input_features[i:i + time_steps],
