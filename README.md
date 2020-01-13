@@ -2,6 +2,14 @@
 
 It is pytorch and keras implementations of [**EA-LSTM: Evolutionary Attention-based LSTM for Time Series Prediction**](https://arxiv.org/abs/1811.03760).
 
+## _Requirements_ 
+- pandas
+- numpy
+- tqdm
+- scikit-learn
+- pytorch >= 1.3.0
+- tensorflow >= 2.1.0
+
 ## _Train and test_
 - You can simply run code by
 ```
